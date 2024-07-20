@@ -1,11 +1,15 @@
 #####################################
 ###### Temperature Anomalies Analysis
 #####################################
-library(WeightedPortTest) # for the potmanteau test
+
+library(WeightedPortTest) # for the portmanteau test
+library(EnvCpt) # for changepoint detection
+library(changepoint) # for changepoint detection
 
 # load data
 load('temperature_anomalies.RData')
 # use Tanom_annual_df, matrix, 6 columns, first year
+# at the time of analysis, the Japan Met dataset had not been updated and is not included in the paper
 
 # setup for PORTMANTEAU results
 names = c("NASA","Japan Met","HadCRUT","NOAA","Berkeley")
@@ -13,20 +17,16 @@ FGstatdisc = matrix(data=NA,nrow=3,ncol=5,dimnames=list(c("IID","GlobalAR(4)","C
 FGstatcont = matrix(data=NA,nrow=3,ncol=5,dimnames=list(c("IID","GlobalAR(4)","ChangingAR(1)"),names))
 LAG=20
 
-
 # Each of the below sets of code fits a single model to all the datasets, extracts the changepoints,
 # saves the results, then calculates the residuals from the fit and performs a portmanteau test
 
 
-############### trend no join
-# fit changepoints
-library(EnvCpt)
-library(changepoint)
+############### Discontinuous model IID
+
 trend=list()
 for(i in 2:6){
   data=Tanom_annual_df[,c(1,i)][!is.na(Tanom_annual_df[,i]),]
   n=nrow(data)
-
   trend[[i]]=EnvCpt:::cpt.reg(cbind(data[,2],rep(1,n),data[,1]),penalty="BIC",method="PELT",minseglen=10)
   plot(trend[[i]],main=names(Tanom_annual_df)[i])
   abline(v=cpts(trend[[i]]),col='blue')
@@ -34,10 +34,12 @@ for(i in 2:6){
 }
 cptstrend=lapply(trend[-1],FUN=function(x){cpts(x)})
 
+# trend contains results for all datasets
 save(trend,cptstrend,file="./Results/resultstrend.Rdata")
 
-#calculate iid fit residuals and perform portmanteau test; row 1 is for iid discontinuous fit
 
+
+# calculate iid fit residuals and perform portmanteau test; row 1 is for iid discontinuous fit
 for (i in 1:5){
   times=Tanom_annual_df[!is.na(Tanom_annual_df[,(i+1)]),1]
   if(i==2) times=c(times,2023)
@@ -54,7 +56,6 @@ for (i in 1:5){
   }
   lmfit=lm(y~0+X)
   FGstatdisc[1,i]=Weighted.Box.test(lmfit$resid,lag=LAG,type="Ljung")$p.value
-  
 }
 
 
@@ -63,9 +64,9 @@ for (i in 1:5){
 
 
 
-############# trend AR no join
+############# Discontinuous model AR(1)
 # fit changepoints
-source('./MethodCode/PELTtrendARp.R') # replacement trendAR1 function
+source('./MethodCode/PELTtrendARp.R') # replacement trendARp function
 trendar=list()
 
 for(i in 2:6){
@@ -79,8 +80,9 @@ for(i in 2:6){
   fit.trendARp(data[,2],trendar[[i]],p=1,dates=data[,1],plot=F,fit=T,add.ar=T,
                title=names(Tanom_annual_df)[i]) # saves full fit for easy residuals
   trendar[[i]]=data[trendar[[i]],1]  # put cpts in terms of year
-  
 }
+
+# trendar contains results for all datasets
 save(trendar,file="./Results/resultstrendar.Rdata")
 
 # NASA :TrendAR1 
@@ -131,11 +133,11 @@ for (i in 1:5){
 
 
 
-############ trend FIX AR4 no join
-# get changepoints
-source('./MethodCode/PELTtrendARp.R') # replacement trendAR1 function
-trendFIXarp=list()
+############ Discontinuous model with fixed AR(4)
 
+# get changepoints
+source('./MethodCode/PELTtrendARp.R') # replacement trendARp function
+trendFIXarp=list()
 arp=matrix(c(rep(NA,4),
              0.5347,-0.1079,0.0991,0.1268,
              0.5046,-0.1608,0.0256,0.1594,
@@ -156,6 +158,7 @@ for(i in 2:6){
   trendFIXarp[[i]]=data[trendFIXarp[[i]],1]  # put cpts in terms of year
 }
 
+# trendFIXarp contains results for all datasets
 save(trendFIXarp,file="./Results/resultstrendFIXar4.Rdata")
 
 # NASA :TrendAR4 
@@ -225,7 +228,8 @@ for (i in 1:5){
 
 
 
-########### trend join
+########### Continuous model IID
+
 source("./MethodCode/optpelt2b.R") ##code for fitting continuous piecewise linear
 source("./MethodCode/CROPS_optp.R") ##code for using CROPS
 source("./MethodCode/FCPS.R") ##code for fitting function given changepoints
@@ -305,7 +309,7 @@ for (i in 1:5){
 
 
 
-# trend AR join
+########### Continuous model AR(1)
 source('./MethodCode/PELTtrendARpJOIN.R')
 trendarjoin=list()
 
@@ -376,8 +380,8 @@ for (i in 1:5){
 
 
 
+########### Continuous model fixed AR(4)
 
-# trend FIX ar join
 source('./MethodCode/PELTtrendARpJOIN.R')
 trendFIXar4join=list()
 
@@ -475,3 +479,39 @@ fits=list.files(path='./Results/',pattern="\\_fit\\.RData$",ignore.case=T)
 for(i in 1:length(fits)){
   acfpacfcpts(paste0("./Results/",fits[i]),title=paste(strsplit(fits[i],"\\_")[[1]][1],strsplit(fits[i],"\\_")[[1]][2]))
 }
+
+
+
+
+
+# Continuous model AR(1) withholding 2023 
+# analysis in response to reviewer comment
+
+source('./MethodCode/PELTtrendARpJOIN.R')
+trendarjoinm23=list()
+predtrendarjoinm23=list()
+
+datam23=Tanom_annual_df[-nrow(Tanom_annual_df),] # remove 2023 measurement
+for(i in 2:6){
+  data=datam23[,c(1,i)][!is.na(datam23[,i]),]
+  n=nrow(data)
+  
+  trendarjoinm23[[i]]=PELT.trendARpJOIN(data[,2],p=1,pen=4*log(n),minseglen=10)
+  cat(paste(names(Tanom_annual_df)[i],':TrendAR1join \n'))
+  #print(fit.trendARpJOIN(data[,2],trendarjoinm23[[i]],p=1,dates=data[,1],plot=T,add.ar=F,
+  #                       title=names(Tanom_annual_df)[i]))
+  predtrendarjoinm23[[i]]=fit.trendARpJOIN(data[,2],trendarjoinm23[[i]],p=1,dates=data[,1],plot=F,fit=T,add.ar=T,
+                   title=names(Tanom_annual_df)[i],pred=T) # get 1 step ahead prediction
+}
+preds=NULL
+sepred=NULL
+for(i in 2:6){
+  preds[i]=predtrendarjoinm23[[i]][[1]]$pred
+  sepred[i]=predtrendarjoinm23[[i]][[1]]$se
+}
+predtrendarjoinm23=rbind(preds,sepred)
+rm(preds,sepred)
+
+Z=(Tanom_annual_df[nrow(Tanom_annual_df),]-predtrendarjoinm23[1,])/predtrendarjoinm23[2,]
+pnorm(q=as.numeric(Z[2:6]))
+# 0.9925837 0.9983212 0.9962647 0.9982221 0.9932941

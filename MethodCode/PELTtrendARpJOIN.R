@@ -66,9 +66,9 @@ PELT.trendARpJOIN=function(data,p=p,pen=0,minseglen=1,verbose=FALSE){
 
 # Now for a given output from the above (set of changepoints) we want to get
 # the final fit for each segment and a plot
-fit.trendARpJOIN=function(data,cpts,p,dates=NULL,plot=T,fit=T,add.ar=F,title="Data"){
+fit.trendARpJOIN=function(data,cpts,p,dates=NULL,plot=T,fit=T,add.ar=F,title="Data",pred=F){
   library(forecast)
-  trendARpsegfit=function(data,start,previousbeta,p){
+  trendARpsegfit=function(data,start,previousbeta,p,pred=F){
     # assumes that data is the data for the segment
     n=length(data)
     t=start:(start+n-1)
@@ -76,8 +76,15 @@ fit.trendARpJOIN=function(data,cpts,p,dates=NULL,plot=T,fit=T,add.ar=F,title="Da
     X=(t-start)/n
     trendfit=lm(filtered~-1+X)
     arfit=arima(resid(trendfit),order=c(p,0,0),include.mean=FALSE, method="ML")
-    return(list(coef=c(coef(trendfit)/n,coef(arfit)),arfit=fitted(arfit),
+    if(pred==F){
+      return(list(coef=c(coef(trendfit)/n,coef(arfit)),arfit=fitted(arfit),
                 trendfit=fitted(trendfit)+previousbeta-previousbeta*(t-start)/n))
+    }
+    else{
+      forecast=predict(arfit) # 1 step ahead prediction + errors
+      forecast$pred=forecast$pred+coef(trendfit)
+      return(forecast)
+    }
     # divide by n on the coef for beta because of the transformation to X
   }
   
@@ -97,15 +104,22 @@ fit.trendARpJOIN=function(data,cpts,p,dates=NULL,plot=T,fit=T,add.ar=F,title="Da
   cpts=c(0,cpts,length(data))
   segments=list()
   coeffs=matrix(NA,nrow=length(cpts)-1,ncol=p+1)
+  if(pred){predictions=list()}
   
   segments[[1]]=FIRSTtrendARpsegfit(data[(cpts[1]+1):cpts[2]],start=cpts[1],p=p)
   coeffs[1,]=segments[[1]]$coef
   if(length(cpts)>2){
     for(i in 2:(length(cpts)-1)){
-      segments[[i]]=trendARpsegfit(data[(cpts[i]+1):cpts[i+1]],start=cpts[i],previousbeta=coeffs[i-1,1],p=p)
-      coeffs[i,]=segments[[i]]$coef
+      if(pred==F){
+        segments[[i]]=trendARpsegfit(data[(cpts[i]+1):cpts[i+1]],start=cpts[i],previousbeta=coeffs[i-1,1],p=p)
+        coeffs[i,]=segments[[i]]$coef
+      }
+      else{
+        predictions[[i-1]]=trendARpsegfit(data[(cpts[i]+1):cpts[i+1]],start=cpts[i],previousbeta=coeffs[i-1,1],p=p,pred=T)
+      }
     }
   }
+  if(pred){return(predictions)}
   
   if(plot|fit){
     fit=unlist(lapply(segments,FUN=function(x){x$trendfit}))
@@ -136,7 +150,6 @@ fit.trendARpJOIN=function(data,cpts,p,dates=NULL,plot=T,fit=T,add.ar=F,title="Da
       #abline(v=cpts[-c(1,length(cpts))],col='blue')
     }
   }
-  
   return(coeffs)
 }
 

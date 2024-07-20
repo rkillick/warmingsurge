@@ -291,3 +291,79 @@ levelplot(percentsurgeBERK,row.values=startyear,column.values=endyear,xlab="Surg
                         labels=list(at=seq(35, 150, 10))))
 
 
+
+
+
+
+# Power sims requested by reviewer
+
+# start of sims run on the cluster, parallelized on cpt
+#slope2=0.0388
+simulateonepower=function(index=1,cpt,interc=-0.0662,slope1=.019,slope2=0.019*1.5,sd=.09,phi=0.178){
+  #Code to simulate power for one cpt time with end of vantage year up to 2040
+  seg=1970:2040
+  preseglen=length(1970:(cpt-1))
+  postseglen=length(cpt:2040)
+  
+  y=interc+c(rep(slope1,preseglen),rep(slope1,postseglen))*c(1970:(cpt-1),rep(cpt-1,postseglen))+c(rep(slope1,preseglen),rep(slope2,postseglen))*c(rep(0,preseglen),cpt:2040-cpt+1)+
+    arima.sim(n=length(seg),sd=sd,model=list(ar=phi))
+  cptindex=preseglen
+
+  teststat=apply(matrix(c((which(seg==2024)-1):length(y)),ncol=1),MARGIN=1,FUN=function(n){
+    # n = vantage (end) index
+    min=max(round(0.1*n),2)
+    max=min(n-round(0.1*n),n-2)
+    seglen=max:min
+    stats=apply(matrix(c(1:length(seglen)),ncol=1),MARGIN=1,FUN=function(i){
+      seg2=(n-seglen[i]+1):n
+      seg1=1:(n-seglen[i])
+      X=cbind(rep(1,n),c(seg1,rep(seg1[length(seg1)],seglen[i])),c(rep(0,(n-seglen[i])),seg2-seg2[1]+1))
+      vec=c(0,0,-1,1)
+      armafit=arima(y[1:n],xreg=X,order=c(1,0,0),include.mean=FALSE)
+      sddiff=sqrt(t(vec)%*%armafit$var.coef%*%vec)
+      stats=(armafit$coef[3]-armafit$coef[4])/sddiff
+    })
+    return((max(abs(stats))))
+  })
+}
+
+set.seed(89298) # same seed for each changepoint time
+nreps=500
+cpt=1990:2015 # in the paper
+# note that we run the next function in parallel over both cpt time and slope2 as default and slope2=0.0388
+teststatmat=apply(matrix(c(1:nreps),ncol=1),MARGIN=1,FUN=simulateonepower,cpt=2012)
+
+load("Results/TmaxquantHad.Rdata")
+power=rowMeans(apply(teststatmat,MARGIN=2,FUN=function(x){
+  x>TmaxquantHad$QNs
+}))
+# end of sims run on the cluster
+
+load('Results/powerresultsdouble.Rdata')
+library(lattice)
+library(shape)
+library(latex2exp)
+startyear=1990:2015
+endyear=2023:2040
+cols=unique(as.vector(powerresultsdouble))
+levelplot(t(powerresultsdouble*100),row.values=startyear,column.values=endyear,xlab="Surge Timing", ylab="Vantage Year",
+          at=seq(0, 100, 5), 
+          col.regions=femmecol(n=length(cols)),
+          colorkey=list(col=femmecol(n=length(cols)),at=seq(0, 100, 5),space="top",title="Detection power (%)",tick.number=6,
+                        labels=list(at=seq(0, 100, 10))))
+
+
+
+load('Results/powerresultshalf.Rdata')
+library(lattice)
+library(shape)
+library(latex2exp)
+startyear=1990:2015
+endyear=2023:2040
+cols=unique(as.vector(powerresultshalf))
+levelplot(t(powerresultshalf*100),row.values=startyear,column.values=endyear,xlab="Surge Timing", ylab="Vantage Year",
+         at=seq(0, 100, 5),
+          col.regions=femmecol(n=length(cols)),
+          colorkey=list(col=femmecol(n=length(cols)),at=seq(0, 100, 5),space="top",title="Detection power (%)",tick.number=6,
+                        labels=list(at=seq(0, 100, 10))))
+
